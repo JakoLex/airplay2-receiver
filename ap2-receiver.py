@@ -5,6 +5,8 @@ import random
 import tempfile  # noqa
 from threading import current_thread
 
+import os
+
 import pprint
 
 import http.server
@@ -91,7 +93,8 @@ HTTP_X_A_AT = "X-Apple-AbsoluteTime"
 HTTP_X_A_ET = "X-Apple-ET"
 
 #
-AIRPLAY_BUFFER = 8388608  # 0x800000 i.e. 1024 * 8192 - how many CODEC frame size 1024 we can hold
+# 0x800000 i.e. 1024 * 8192 - how many CODEC frame size 1024 we can hold
+AIRPLAY_BUFFER = 8388608
 
 
 def increase_stream_id():
@@ -134,7 +137,8 @@ def update_status_flags(flag=None, on=False, push=True):
     # If push is false, we skip pushing out the update.
     if push:
         if IPV6 is not None:
-            MDNS_OBJ = register_mdns(DEVICE_ID, DEV_NAME, [IP4ADDR_BIN, IP6ADDR_BIN])
+            MDNS_OBJ = register_mdns(DEVICE_ID, DEV_NAME, [
+                                     IP4ADDR_BIN, IP6ADDR_BIN])
         else:
             MDNS_OBJ = register_mdns(DEVICE_ID, DEV_NAME, [IP4ADDR_BIN])
 
@@ -334,6 +338,7 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
 
     """ This is needed now to prep logging in case we get a sneak attack from
     AP1 senders that don't go via dispatch """
+
     def __init__(self, socket, client_address, server):
         """ thread local logging """
         server_address = socket.getsockname()
@@ -341,7 +346,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
         pair_string += f'; {current_thread().name}'
         level = 'DEBUG' if DEBUG else 'INFO'
         self.logger = get_screen_logger(pair_string, level=level)
-        http.server.BaseHTTPRequestHandler.__init__(self, socket, client_address, server)
+        http.server.BaseHTTPRequestHandler.__init__(
+            self, socket, client_address, server)
         return
 
     def dispatch(self):
@@ -353,7 +359,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
             paramStr = self.path.split('?')[1]
 
         self.logger.debug(f'{self.command}: {path}')
-        self.logger.debug(f'!Dropped parameters: {paramStr}') if paramStr else self.logger.debug('')
+        self.logger.debug(
+            f'!Dropped parameters: {paramStr}') if paramStr else self.logger.debug('')
         self.logger.debug(self.headers)
         try:
             # pass additional paramArray:
@@ -368,7 +375,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
             self.hap = None
 
     def parse_request(self):
-        self.raw_requestline = self.raw_requestline.replace(b"RTSP/1.0", b"HTTP/1.1")
+        self.raw_requestline = self.raw_requestline.replace(
+            b"RTSP/1.0", b"HTTP/1.1")
 
         r = http.server.BaseHTTPRequestHandler.parse_request(self)
         self.protocol_version = "RTSP/1.0"
@@ -404,7 +412,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
 
         if "Apple-Challenge" in self.headers:
             # Build Apple-Reponse
-            apple_response = AP1Security.compute_apple_response(self.headers["Apple-Challenge"], IPADDR_BIN, DEVICE_ID_BIN)
+            apple_response = AP1Security.compute_apple_response(
+                self.headers["Apple-Challenge"], IPADDR_BIN, DEVICE_ID_BIN)
             self.send_header("Apple-Jack-Status", "connected; type=analog")
             self.send_header("Apple-Response", apple_response)
         self.send_header("Public",
@@ -433,27 +442,32 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                     self.send_response(404)
                     self.hap = None
                 else:
-                    if(sdp.audio_format is SDPHandler.SDPAudioFormat.ALAC
+                    if (sdp.audio_format is SDPHandler.SDPAudioFormat.ALAC
                        and int((FEATURES & FeatureFlags.getFeature19ALAC(FeatureFlags))) == 0):
-                        self.logger.warning("This receiver not configured for ALAC (set flag 19).")
+                        self.logger.warning(
+                            "This receiver not configured for ALAC (set flag 19).")
                         self.send_response(404)
                         self.hap = None
                     elif (sdp.audio_format is SDPHandler.SDPAudioFormat.AAC
                           and int((FEATURES & FeatureFlags.getFeature20AAC(FeatureFlags))) == 0):
-                        self.logger.warning("This receiver not configured for AAC (set flag 20).")
+                        self.logger.warning(
+                            "This receiver not configured for AAC (set flag 20).")
                         self.send_response(404)
                         self.hap = None
                     elif (sdp.audio_format is SDPHandler.SDPAudioFormat.AAC_ELD
                           and int((FEATURES & FeatureFlags.getFeature20AAC(FeatureFlags))) == 0):
-                        self.logger.warning("This receiver not configured for AAC (set flag 20/21).")
+                        self.logger.warning(
+                            "This receiver not configured for AAC (set flag 20/21).")
                         self.send_response(404)
                         self.hap = None
                     else:
                         if sdp.has_fp and self.fairplay_keymsg:
                             self.logger.debug('Got FP AES Key from SDP')
-                            self.aeskeyobj = FairPlayAES(fpaeskeyb64=sdp.aeskey, aesivb64=sdp.aesiv, keymsg=self.fairplay_keymsg)
+                            self.aeskeyobj = FairPlayAES(
+                                fpaeskeyb64=sdp.aeskey, aesivb64=sdp.aesiv, keymsg=self.fairplay_keymsg)
                         elif sdp.has_rsa:
-                            self.aeskeyobj = FairPlayAES(rsaaeskeyb64=sdp.aeskey, aesivb64=sdp.aesiv)
+                            self.aeskeyobj = FairPlayAES(
+                                rsaaeskeyb64=sdp.aeskey, aesivb64=sdp.aesiv)
                         self.send_response(200)
                         self.send_header("Server", self.version_string())
                         self.send_header("CSeq", self.headers["CSeq"])
@@ -481,7 +495,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                     try:
                         for s in self.server.streams:
                             if s.isAudio() and s.isInitialized():
-                                s.getAudioConnection().send(f"flush_from_until_seq-{fr}-{to}")
+                                s.getAudioConnection().send(
+                                    f"flush_from_until_seq-{fr}-{to}")
                     except OSError as e:
                         self.logger.error(f'FLUSHBUFFERED error: {repr(e)}')
 
@@ -561,7 +576,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.logger.info('')
             # Send flag that we're active
-            update_status_flags(StatusFlags.getRecvSessActive(StatusFlags), on=True)
+            update_status_flags(
+                StatusFlags.getRecvSessActive(StatusFlags), on=True)
             return
 
         if self.headers["Content-Type"] == HTTP_CT_BPLIST:
@@ -581,7 +597,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                     self.server.event_port, self.server.event_proc = EventGeneric.spawn(
                         self.server.server_address, name='events', shared_key=self.ecdh_shared_key, isDebug=DEBUG)
                     device_setup["eventPort"] = self.server.event_port
-                    self.logger.debug(f"[+] eventPort={self.server.event_port}")
+                    self.logger.debug(
+                        f"[+] eventPort={self.server.event_port}")
 
                     self.logger.debug(self.pp.pformat(device_setup))
                     res = writePlistToString(device_setup)
@@ -628,7 +645,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(res)
                     self.logger.info('')
                     # Send flag that we're active
-                    update_status_flags(StatusFlags.getRecvSessActive(StatusFlags), on=True)
+                    update_status_flags(
+                        StatusFlags.getRecvSessActive(StatusFlags), on=True)
                 return
         self.send_error(404)
         self.logger.info('')
@@ -654,7 +672,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
         if DISABLE_VM:
             res = b"volume: 0" + b"\r\n"
         else:
-            res = b"\r\n".join(b"%s: %s" % (k, v) for k, v in params_res.items()) + b"\r\n"
+            res = b"\r\n".join(b"%s: %s" % (k, v)
+                               for k, v in params_res.items()) + b"\r\n"
         self.send_response(200)
         self.send_header("Content-Length", len(res))
         self.send_header("Content-Type", HTTP_CT_PARAM)
@@ -682,14 +701,17 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                         if not DISABLE_VM:
                             set_volume(float(pp[1]))
                         else:
-                            self.logger.warning("Volume Management is disabled")
+                            self.logger.warning(
+                                "Volume Management is disabled")
                     elif pp[0] == b"progress":
                         # startTimeStamp, currentTimeStamp, stopTimeStamp
                         try:
                             for s in self.server.streams:
-                                s.getAudioConnection().send(f"progress-{pp[1].decode('utf8').lstrip(' ')}")
+                                s.getAudioConnection().send(
+                                    f"progress-{pp[1].decode('utf8').lstrip(' ')}")
                         except OSError as e:
-                            self.logger.error(f'SET_PARAMETER error: {repr(e)}')
+                            self.logger.error(
+                                f'SET_PARAMETER error: {repr(e)}')
 
                         self.logger.info(f"SET_PARAMETER: {pp[0]} => {pp[1]}")
                     # else:
@@ -745,18 +767,21 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                         if plist["rate"] == 1:
                             for s in self.server.streams:
                                 if s.isAudio() and s.isInitialized():
-                                    s.getAudioConnection().send(f"play-{plist['rtpTime']}")
+                                    s.getAudioConnection().send(
+                                        f"play-{plist['rtpTime']}")
                         if plist["rate"] == 0:
                             for s in self.server.streams:
                                 if s.isAudio() and s.isInitialized():
                                     s.getAudioConnection().send("pause")
                     except OSError:
-                        self.logger.error(f'SETRATEANCHORTIME error: {repr(e)}')
+                        self.logger.error(
+                            f'SETRATEANCHORTIME error: {repr(e)}')
 
                     self.logger.info(self.pp.pformat(plist))
             except IndexError:
                 # Fixes some disconnects
-                self.logger.error('Cannot process request; streams torn down already.')
+                self.logger.error(
+                    'Cannot process request; streams torn down already.')
         self.send_response(200)
         self.send_header("Server", self.version_string())
         self.send_header("CSeq", self.headers["CSeq"])
@@ -781,7 +806,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                                 if stream_type == st.getStreamType() and stream_id == st.getStreamID():
                                     st.teardown()
                         # Stream cull: build new list of non culled streams
-                        self.server.streams[:] = [s for s in self.server.streams if not s.isCulled()]
+                        self.server.streams[:] = [
+                            s for s in self.server.streams if not s.isCulled()]
                 self.logger.info(self.pp.pformat(plist))
                 if plist == {} and len(self.server.streams) == 0:
                     self.server.event_proc.terminate()
@@ -858,7 +884,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
             rtptime = rtptime.split('=')[1]
             try:
                 for s in self.server.streams:
-                    s.getAudioConnection().send(f"flush_seq_rtptime-{seq}-{rtptime}")
+                    s.getAudioConnection().send(
+                        f"flush_seq_rtptime-{seq}-{rtptime}")
             except OSError as e:
                 self.logger.error(f'FLUSH error: {repr(e)}')
 
@@ -970,7 +997,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                     triggers: {'ascm': 1, 'tkrd': ['pair', 'auth', 'uuid']}
                     """
 
-                    self.logger.error('Unhandled edge-case for unencrypted auth setup')
+                    self.logger.error(
+                        'Unhandled edge-case for unencrypted auth setup')
         if response:
             self.send_response(200)
             self.send_header("Content-Length", len(response))
@@ -980,7 +1008,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
             if op == 'fp':
                 self.wfile.write(response)
         else:
-            self.logger.error('Unhandled edge-case: FairPlay 2 encryption not supported.')
+            self.logger.error(
+                'Unhandled edge-case: FairPlay 2 encryption not supported.')
             self.send_error(101)
             return
 
@@ -1018,7 +1047,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(res)
 
         if self.hap.encrypted and self.hap.mfi_setup:
-            self.logger.warning('MFi setup not yet possible. Disable feature bit 51.')
+            self.logger.warning(
+                'MFi setup not yet possible. Disable feature bit 51.')
         elif self.hap.encrypted:
             hexdump(self.hap.accessory_shared_key) if DEBUG else ''
             self.ecdh_shared_key = self.hap.accessory_shared_key
@@ -1093,7 +1123,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                 hkac = bool(plist[cd_s][hkac_s])
                 DEV_PROPS.setHKACL(hkac)
                 if hkac:
-                    update_status_flags(StatusFlags.getHKACFlag(StatusFlags), on=True)
+                    update_status_flags(
+                        StatusFlags.getHKACFlag(StatusFlags), on=True)
                 else:
                     update_status_flags(StatusFlags.getHKACFlag(StatusFlags))
             if pw_s in plist[cd_s]:
@@ -1105,7 +1136,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                 pw = plist[cd_s][pw_s]
                 pwset = False if pw == '' else True
                 if pwset:
-                    update_status_flags(StatusFlags.getPWSetFlag(StatusFlags), on=True)
+                    update_status_flags(
+                        StatusFlags.getPWSetFlag(StatusFlags), on=True)
                 else:
                     update_status_flags(StatusFlags.getPWSetFlag(StatusFlags))
 
@@ -1166,7 +1198,8 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
                     self.send_error(404)
                     return
             else:
-                self.logger.error(f"Content-Type: {self.headers['Content-Type']} | Not implemented")
+                self.logger.error(
+                    f"Content-Type: {self.headers['Content-Type']} | Not implemented")
                 self.send_error(404)
         else:
             res = writePlistToString(device_info)
@@ -1260,14 +1293,16 @@ class AP2Server(socketserver.ThreadingTCPServer):
     # Override
     def get_request(self):
         client_socket, client_addr = super().get_request()
-        self.logger.info(f"Opened connection from {client_addr[0]}:{client_addr[1]}")
+        self.logger.info(
+            f"Opened connection from {client_addr[0]}:{client_addr[1]}")
         self.connections[client_addr] = client_socket
         return (client_socket, client_addr)
 
     def upgrade_to_encrypted(self, client_address, shared_key):
         client_socket = self.connections[client_address]
         self.hap_socket = HAPSocket(client_socket, shared_key)
-        self.logger.info(f"{current_thread().name}: Opened HAPSocket from {client_address[0]}:{client_address[1]}")
+        self.logger.info(
+            f"{current_thread().name}: Opened HAPSocket from {client_address[0]}:{client_address[1]}")
         self.connections[client_address] = self.hap_socket
         return self.hap_socket
 
@@ -1292,7 +1327,8 @@ def list_network_interfaces():
                 for ak in addresses[address_family]:
                     for akx in ak:
                         if str(akx) == 'addr':
-                            print(f"    {'IPv4' if address_family == ni.AF_INET else 'IPv6'}: {str(ak[akx])}")
+                            print(
+                                f"    {'IPv4' if address_family == ni.AF_INET else 'IPv6'}: {str(ak[akx])}")
 
 
 def list_available_flags():
@@ -1303,24 +1339,34 @@ def list_available_flags():
 
 
 def generate_fake_mac():
-    fakemac = int(random.getrandbits(48)).to_bytes(length=6, byteorder='big').hex()
-    fm = ':'.join(map(str, [fakemac[i:i + 2] for i in range(0, len(fakemac), 2)]))
+    fakemac = int(random.getrandbits(48)).to_bytes(
+        length=6, byteorder='big').hex()
+    fm = ':'.join(map(str, [fakemac[i:i + 2]
+                  for i in range(0, len(fakemac), 2)]))
     return fm
 
 
 if __name__ == "__main__":
 
+    # Wechsel in das Arbeitsverzeichnis
+    os.chdir(r"C:\Users\JakoLex\Documents\Scripts\AirPlay\airplay2-receiver")
+
     multiprocessing.set_start_method("spawn")
     parser = argparse.ArgumentParser(prog='AirPlay 2 receiver')
     mutexgroup = parser.add_mutually_exclusive_group()
 
-    parser.add_argument("-fm", "--fakemac", help="Generate and use a random MAC for ethernet address.", action='store_true')
-    parser.add_argument("-m", "--mdns", help="mDNS name to announce", default="myap2")
-    parser.add_argument("-n", "--netiface", help="Network interface to bind to. Use the --list-interfaces option to list available interfaces.")
-    parser.add_argument("-nv", "--no-volume-management", help="Disable volume management", action='store_true')
+    parser.add_argument(
+        "-fm", "--fakemac", help="Generate and use a random MAC for ethernet address.", action='store_true')
+    parser.add_argument(
+        "-m", "--mdns", help="mDNS name to announce", default="myap2")
+    parser.add_argument(
+        "-n", "--netiface", help="Network interface to bind to. Use the --list-interfaces option to list available interfaces.")
+    parser.add_argument("-nv", "--no-volume-management",
+                        help="Disable volume management", action='store_true')
     parser.add_argument("-npm", "--no-ptp-master", help="Stops this receiver from being announced as the PTP Master",
                         action='store_true')
-    mutexgroup.add_argument("-f", "--features", help="Features: a hex representation of Airplay features. Note: mutex with -ft(xxx)")
+    mutexgroup.add_argument(
+        "-f", "--features", help="Features: a hex representation of Airplay features. Note: mutex with -ft(xxx)")
     mutexgroup.add_argument(
         "-ft", nargs='+', type=int, metavar='F',
         help="Explicitly enable individual Airplay feature bits. Use 0 for help.")
@@ -1336,8 +1382,10 @@ if __name__ == "__main__":
     mutexgroup.add_argument(
         "-ftxor", nargs='+', type=int, metavar='F',
         help="Bitwise XOR toggle individual Airplay feature bits from the default. Use 0 for help.")
-    parser.add_argument("--list-interfaces", help="Prints available network interfaces and exits.", action='store_true')
-    parser.add_argument("--debug", help="Prints extra debug message e.g. HTTP headers.", action='store_true')
+    parser.add_argument(
+        "--list-interfaces", help="Prints available network interfaces and exits.", action='store_true')
+    parser.add_argument(
+        "--debug", help="Prints extra debug message e.g. HTTP headers.", action='store_true')
 
     args = parser.parse_args()
 
@@ -1352,7 +1400,8 @@ if __name__ == "__main__":
         exit(0)
 
     if args.netiface is None:
-        print("[!] Missing --netiface argument. See below for a list of valid interfaces")
+        print(
+            "[!] Missing --netiface argument. See below for a list of valid interfaces")
         list_network_interfaces()
         exit(-1)
 
@@ -1368,7 +1417,7 @@ if __name__ == "__main__":
     DISABLE_PTP_MASTER = args.no_ptp_master
     DEV_PROPS = DeviceProperties(PI, DEBUG)
     DEV_NAME = args.mdns
-    if(parser.get_default('mdns') != DEV_NAME):
+    if (parser.get_default('mdns') != DEV_NAME):
         DEV_PROPS.setDeviceName(DEV_NAME)
     else:
         DEV_NAME = DEV_PROPS.getDeviceName()
@@ -1431,7 +1480,8 @@ if __name__ == "__main__":
                 DEVICE_ID = generate_fake_mac()
         else:
             DEVICE_ID = ifen[ni.AF_LINK][0]["addr"]
-        DEVICE_ID_BIN = int((DEVICE_ID).replace(":", ""), base=16).to_bytes(6, 'big')
+        DEVICE_ID_BIN = int((DEVICE_ID).replace(
+            ":", ""), base=16).to_bytes(6, 'big')
     if ifen.get(ni.AF_INET):
         IPV4 = ifen[ni.AF_INET][0]["addr"]
         IP4ADDR_BIN = socket.inet_pton(ni.AF_INET, IPV4)
@@ -1454,7 +1504,8 @@ if __name__ == "__main__":
     SCR_LOG.info("")
 
     if IPV6 is not None:
-        MDNS_OBJ = register_mdns(DEVICE_ID, DEV_NAME, [IP4ADDR_BIN, IP6ADDR_BIN])
+        MDNS_OBJ = register_mdns(DEVICE_ID, DEV_NAME, [
+                                 IP4ADDR_BIN, IP6ADDR_BIN])
     else:
         MDNS_OBJ = register_mdns(DEVICE_ID, DEV_NAME, [IP4ADDR_BIN])
 
