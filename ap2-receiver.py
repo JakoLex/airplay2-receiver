@@ -6,6 +6,8 @@ import tempfile  # noqa
 from threading import current_thread
 
 import os
+import sys
+import signal
 
 import pprint
 
@@ -21,7 +23,7 @@ from biplist import InvalidPlistException
 
 from ap2.playfair import PlayFair, FairPlayAES
 from ap2.airplay1 import AP1Security
-from ap2.utils import get_volume, set_volume, set_volume_pid, get_screen_logger
+from ap2.utils import get_volume, set_volume, set_volume_pid, get_service_logger
 from ap2.pairing.hap import Hap, HAPSocket, LTPK, DeviceProperties
 from ap2.connections.event import EventGeneric
 from ap2.connections.stream import Stream
@@ -345,7 +347,7 @@ class AP2Handler(http.server.BaseHTTPRequestHandler):
         pair_string = f'{self.__class__.__name__}: {server_address[0]}:{server_address[1]}<=>{client_address[0]}:{client_address[1]}'
         pair_string += f'; {current_thread().name}'
         level = 'DEBUG' if DEBUG else 'INFO'
-        self.logger = get_screen_logger(pair_string, level=level)
+        self.logger = get_service_logger(pair_string, level=level)
         http.server.BaseHTTPRequestHandler.__init__(
             self, socket, client_address, server)
         return
@@ -1288,7 +1290,7 @@ class AP2Server(socketserver.ThreadingTCPServer):
         self.sessions = []
         log_string = f'{self.__class__.__name__}: {self.serv_addr}:{self.serv_port}'
         level = 'DEBUG' if DEBUG else 'INFO'
-        self.logger = get_screen_logger(log_string, level=level)
+        self.logger = get_service_logger(log_string, level=level)
 
     # Override
     def get_request(self):
@@ -1356,6 +1358,8 @@ if __name__ == "__main__":
     mutexgroup = parser.add_mutually_exclusive_group()
 
     parser.add_argument(
+        "--service-mode", help="Run in Windows service mode", action='store_true')
+    parser.add_argument(
         "-fm", "--fakemac", help="Generate and use a random MAC for ethernet address.", action='store_true')
     parser.add_argument(
         "-m", "--mdns", help="mDNS name to announce", default="myap2")
@@ -1390,10 +1394,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     DEBUG = args.debug
-    if DEBUG:
-        SCR_LOG = get_screen_logger('Receiver', level='DEBUG')
-    else:
-        SCR_LOG = get_screen_logger('Receiver', level='INFO')
+    service_mode = hasattr(args, 'service_mode') and args.service_mode
+    SCR_LOG = get_service_logger(
+        'Receiver', level='DEBUG' if DEBUG else 'INFO', service_mode=service_mode)
 
     if args.list_interfaces:
         list_network_interfaces()
@@ -1533,3 +1536,46 @@ if __name__ == "__main__":
     finally:
         SCR_LOG.info("Shutting down mDNS...")
         unregister_mdns(*MDNS_OBJ)
+
+    # Arbeitsverzeichnis für Service setzen
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(script_dir)
+
+    # Multiprocessing für Windows Service
+    multiprocessing.freeze_support()
+    multiprocessing.set_start_method("spawn")
+
+    # Parser vor DEBUG-Zuweisung
+    args = parser.parse_args()
+    DEBUG = args.debug
+
+    # Service-spezifische Anpassungen
+    if hasattr(args, 'service_mode') and args.service_mode:
+        # Für Service: Logging in Dateien statt Console
+        import logging
+        log_dir = os.path.join(script_dir, 'logs')
+        os.makedirs(log_dir, exist_ok=True)
+
+        # Logging-Konfiguration für Service
+        logging.basicConfig(
+            level=logging.DEBUG if DEBUG else logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(os.path.join(log_dir, 'airplay2.log')),
+                logging.handlers.RotatingFileHandler(
+                    os.path.join(log_dir, 'airplay2_rotating.log'),
+                    maxBytes=1024*1024*5,  # 5MB
+                    backupCount=3
+                )
+            ]
+        )
+
+        # Signal Handler für graceful shutdown
+        def signal_handler(signum, frame):
+            SCR_LOG.info("Service shutdown signal received")
+            if MDNS_OBJ:
+                unregister_mdns(*MDNS_OBJ)
+            sys.exit(0)
+
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)

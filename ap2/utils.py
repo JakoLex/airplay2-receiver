@@ -1,3 +1,4 @@
+import os
 import re
 import socket
 import logging
@@ -122,7 +123,8 @@ def get_file_logger(name, level="INFO"):
     logger = logging.getLogger(name)
     logger.setLevel(level)
     # logger.propagate = False
-    formatter = logging.Formatter('%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s')
+    formatter = logging.Formatter(
+        '%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s')
     fh = logging.FileHandler(f'{name}.log', 'a')
     fh.setFormatter(formatter)
     sh = logging.StreamHandler()
@@ -135,12 +137,31 @@ def get_file_logger(name, level="INFO"):
     return logger
 
 
-def get_screen_logger(name, level="INFO"):
+def get_service_logger(name, level='INFO', service_mode=False):
     logger = logging.getLogger(name)
-    logger.setLevel(level)
-    # logger.propagate = False
-    if level == 'DEBUG':
-        print(f'[{name}] logging level: {level}')
+    logger.setLevel(getattr(logging, level))
+
+    if service_mode:
+        # Für Service: nur File-Handler
+        if not logger.handlers:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            log_dir = os.path.join(script_dir, 'logs')
+            os.makedirs(log_dir, exist_ok=True)
+
+            handler = logging.FileHandler(os.path.join(log_dir, f'{name}.log'))
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+    else:
+        # Normale Console-Ausgabe
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+
     return logger
 
 
@@ -211,7 +232,8 @@ def get_pycaw_volume_session():
 def get_volume():
     subsys = platform.system()
     if subsys == "Darwin":
-        resp = subprocess.check_output(["osascript", "-e", "output volume of (get volume settings)"]).rstrip()
+        resp = subprocess.check_output(
+            ["osascript", "-e", "output volume of (get volume settings)"]).rstrip()
         if resp == b'missing value':
             pct = 25
         else:
@@ -221,7 +243,8 @@ def get_volume():
                 pct = 0
         vol = interpolate(pct, 0, 100, -30, 0)
     elif subsys == "Linux":
-        line_pct = subprocess.check_output(["amixer", "get", "Master"]).splitlines()[-1]
+        line_pct = subprocess.check_output(
+            ["amixer", "get", "Master"]).splitlines()[-1]
         m = re.search(b"\[([0-9]+)%\]", line_pct)
         if m:
             pct = int(m.group(1))
